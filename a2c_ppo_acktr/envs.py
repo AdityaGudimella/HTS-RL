@@ -10,9 +10,9 @@ from baselines.common.atari_wrappers import make_atari, wrap_deepmind, NoopReset
 from baselines.common.vec_env import VecEnvWrapper
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from baselines.common.vec_env.shmem_vec_env import ShmemVecEnv
-from baselines.common.vec_env.vec_normalize import \
-    VecNormalize as VecNormalize_
+from baselines.common.vec_env.vec_normalize import VecNormalize as VecNormalize_
 import time
+
 try:
     import dm_control2gym
 except ImportError:
@@ -30,14 +30,24 @@ except ImportError:
 import gfootball.env as football_env
 
 
-def make_env(env_id, seed, rank, log_dir, allow_early_resets, state,
-             reward_experiment, dump_scores, dump_full_episodes, render):
+def make_env(
+    env_id,
+    seed,
+    rank,
+    log_dir,
+    allow_early_resets,
+    state,
+    reward_experiment,
+    dump_scores,
+    dump_full_episodes,
+    render,
+):
     def _thunk():
         if env_id.startswith("dm"):
-            _, domain, task = env_id.split('.')
+            _, domain, task = env_id.split(".")
             env = dm_control2gym.make(domain_name=domain, task_name=task)
-        elif 'academy' in env_id or '11' in env_id: # gfootball environments
-            #env = football_env.create_environment(
+        elif "academy" in env_id or "11" in env_id:  # gfootball environments
+            # env = football_env.create_environment(
             #          env_name=env_id, stacked=('stacked' in state),
             #          with_checkpoints=('with_checkpoints' in reward_experiment),
             #          logdir=log_dir,
@@ -47,20 +57,25 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets, state,
             #          dump_frequency=50 if render and seed == 0 else 0,
             #          representation='extracted')
             env = football_env.create_environment(
-                env_name=env_id, stacked=('stacked' in state),
+                env_name=env_id,
+                stacked=("stacked" in state),
                 rewards=reward_experiment,
                 logdir=log_dir,
                 render=render and (seed == 0),
-                dump_frequency=50 if render and seed == 0 else 0)
-            env = EpisodeRewardScoreWrapper(env,
-                                            number_of_left_players_agent_controls=1,
-                                            number_of_right_players_agent_controls=0)
+                dump_frequency=50 if render and seed == 0 else 0,
+            )
+            env = EpisodeRewardScoreWrapper(
+                env,
+                number_of_left_players_agent_controls=1,
+                number_of_right_players_agent_controls=0,
+            )
 
         else:
             env = gym.make(env_id)
 
-        is_atari = hasattr(gym.envs, 'atari') and isinstance(
-            env.unwrapped, gym.envs.atari.atari_env.AtariEnv)
+        is_atari = hasattr(gym.envs, "atari") and isinstance(
+            env.unwrapped, gym.envs.atari.atari_env.AtariEnv
+        )
         if is_atari:
             env = make_atari(env_id)
 
@@ -68,20 +83,22 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets, state,
 
         obs_shape = env.observation_space.shape
 
-        if str(env.__class__.__name__).find('TimeLimit') >= 0:
+        if str(env.__class__.__name__).find("TimeLimit") >= 0:
             env = TimeLimitMask(env)
-
-
 
         if is_atari:
             if len(env.observation_space.shape) == 3:
                 env = wrap_deepmind(env, frame_stack=True)
-        elif len(env.observation_space.shape) == 3 and 'academy' not in env_id and '11' not in env_id:
+        elif (
+            len(env.observation_space.shape) == 3
+            and "academy" not in env_id
+            and "11" not in env_id
+        ):
             raise NotImplementedError(
                 "CNN models work only for atari,\n"
                 "please use a custom wrapper for a custom pixel input env.\n"
-                "See wrap_deepmind for an example.")
-
+                "See wrap_deepmind for an example."
+            )
 
         # If the input has shape (W,H,3), wrap for PyTorch convolutions
         obs_shape = env.observation_space.shape
@@ -92,28 +109,39 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets, state,
     return _thunk
 
 
-def make_vec_envs(env_name,
-                  seed,
-                  num_processes,
-                  gamma,
-                  log_dir,
-                  device,
-                  allow_early_resets,
-                  num_frame_stack=None,
-                  state=None,
-                  reward_experiment=None,
-                  dump_scores=None,
-                  dump_full_episodes=None,
-                  render=None
-                  ):
+def make_vec_envs(
+    env_name,
+    seed,
+    num_processes,
+    gamma,
+    log_dir,
+    device,
+    allow_early_resets,
+    num_frame_stack=None,
+    state=None,
+    reward_experiment=None,
+    dump_scores=None,
+    dump_full_episodes=None,
+    render=None,
+):
     envs = [
-        make_env(env_name, seed, i, log_dir, allow_early_resets, state,
-             reward_experiment, dump_scores, dump_full_episodes, render)
+        make_env(
+            env_name,
+            seed,
+            i,
+            log_dir,
+            allow_early_resets,
+            state,
+            reward_experiment,
+            dump_scores,
+            dump_full_episodes,
+            render,
+        )
         for i in range(num_processes)
     ]
 
     if len(envs) > 1:
-        envs = ShmemVecEnv(envs, context='fork')
+        envs = ShmemVecEnv(envs, context="fork")
     else:
         envs = DummyVecEnv(envs)
 
@@ -138,7 +166,7 @@ class TimeLimitMask(gym.Wrapper):
     def step(self, action):
         obs, rew, done, info = self.env.step(action)
         if done and self.env._max_episode_steps == self.env._elapsed_steps:
-            info['bad_transition'] = True
+            info["bad_transition"] = True
 
         return obs, rew, done, info
 
@@ -173,11 +201,10 @@ class TransposeImage(TransposeObs):
         obs_shape = self.observation_space.shape
         self.observation_space = Box(
             self.observation_space.low[0, 0, 0],
-            self.observation_space.high[0, 0, 0], [
-                obs_shape[self.op[0]], obs_shape[self.op[1]],
-                obs_shape[self.op[2]]
-            ],
-            dtype=self.observation_space.dtype)
+            self.observation_space.high[0, 0, 0],
+            [obs_shape[self.op[0]], obs_shape[self.op[1]], obs_shape[self.op[2]]],
+            dtype=self.observation_space.dtype,
+        )
 
     def observation(self, ob):
         return ob.transpose(self.op[0], self.op[1], self.op[2])
@@ -199,8 +226,8 @@ class VecPyTorch(VecEnvWrapper):
         return obs
 
     def step_async(self, actions):
-        #if isinstance(actions, torch.LongTensor):
-            # Squeeze the dimension for discrete actions
+        # if isinstance(actions, torch.LongTensor):
+        # Squeeze the dimension for discrete actions
         #    actions = actions.squeeze(1)
         actions = actions.cpu().numpy()
         self.venv.step_async(actions)
@@ -211,10 +238,10 @@ class VecPyTorch(VecEnvWrapper):
         obs, reward, done, info = self.venv.step_wait()
         self.total_step_wait_time += time.time() - self.start
         if self.steps == 400:
-            print('avg step wait time', self.total_step_wait_time / self.steps)
+            print("avg step wait time", self.total_step_wait_time / self.steps)
         into_to_device = time.time()
         obs = torch.from_numpy(obs).float().to(self.device)
-        #print('[envs] to_device {}'.format(time.time() - into_to_device))
+        # print('[envs] to_device {}'.format(time.time() - into_to_device))
         reward = torch.from_numpy(reward).unsqueeze(dim=1).float()
         return obs, reward, done, info
 
@@ -228,9 +255,11 @@ class VecNormalize(VecNormalize_):
         if self.ob_rms:
             if self.training and update:
                 self.ob_rms.update(obs)
-            obs = np.clip((obs - self.ob_rms.mean) /
-                          np.sqrt(self.ob_rms.var + self.epsilon),
-                          -self.clipob, self.clipob)
+            obs = np.clip(
+                (obs - self.ob_rms.mean) / np.sqrt(self.ob_rms.var + self.epsilon),
+                -self.clipob,
+                self.clipob,
+            )
             return obs
         else:
             return obs
@@ -256,22 +285,21 @@ class VecPyTorchFrameStack(VecEnvWrapper):
         high = np.repeat(wos.high, self.nstack, axis=0)
 
         if device is None:
-            device = torch.device('cpu')
-        self.stacked_obs = torch.zeros((venv.num_envs, ) +
-                                       low.shape).to(device)
+            device = torch.device("cpu")
+        self.stacked_obs = torch.zeros((venv.num_envs,) + low.shape).to(device)
 
         observation_space = gym.spaces.Box(
-            low=low, high=high, dtype=venv.observation_space.dtype)
+            low=low, high=high, dtype=venv.observation_space.dtype
+        )
         VecEnvWrapper.__init__(self, venv, observation_space=observation_space)
 
     def step_wait(self):
         obs, rews, news, infos = self.venv.step_wait()
-        self.stacked_obs[:, :-self.shape_dim0] = \
-            self.stacked_obs[:, self.shape_dim0:]
+        self.stacked_obs[:, : -self.shape_dim0] = self.stacked_obs[:, self.shape_dim0 :]
         for (i, new) in enumerate(news):
             if new:
                 self.stacked_obs[i] = 0
-        self.stacked_obs[:, -self.shape_dim0:] = obs
+        self.stacked_obs[:, -self.shape_dim0 :] = obs
         return self.stacked_obs, rews, news, infos
 
     def reset(self):
@@ -280,7 +308,7 @@ class VecPyTorchFrameStack(VecEnvWrapper):
             self.stacked_obs = torch.zeros(self.stacked_obs.shape)
         else:
             self.stacked_obs.zero_()
-        self.stacked_obs[:, -self.shape_dim0:] = obs
+        self.stacked_obs[:, -self.shape_dim0 :] = obs
         return self.stacked_obs
 
     def close(self):
@@ -288,27 +316,44 @@ class VecPyTorchFrameStack(VecEnvWrapper):
 
 
 class EpisodeRewardScoreWrapper(gym.Wrapper):
-    def __init__(self, env, number_of_left_players_agent_controls, number_of_right_players_agent_controls):
+    def __init__(
+        self,
+        env,
+        number_of_left_players_agent_controls,
+        number_of_right_players_agent_controls,
+    ):
         super().__init__(env)
         self.n_left_agent = number_of_left_players_agent_controls
         self.n_right_agent = number_of_right_players_agent_controls
 
     def step(self, action):
         obs, rew, done, info = self.env.step(action)
-        #if 'score_reward' in info:
-        #    if info['score_reward'] == 0:
-        #        rew[self.n_left_agent:-1] -= sum(rew[:self.n_left_agent])
-        #    if done and info['score_reward'] == 0:
-        #        rew[self.n_left_agent:] += 1
-        #
-        self.episode_score += info['score_reward']
         self.episode_reward += rew
-        #self.episode_reward[self.n_left_agent:] -= sum(rew[:self.n_left_agent])
 
         if done:
-            info['bad_transition'] = True
-            info['episode_reward'] = self.episode_reward
-            info['episode_score'] = self.episode_score
+            info["bad_transition"] = True
+            info["episode_reward"] = self.episode_reward
+            info["episode_score"] = self.episode_score
+        return obs, rew, done, info
+
+    def reset(self, **kwargs):
+        self.episode_reward = 0
+        self.episode_score = 0
+        return self.env.reset(**kwargs)
+
+
+class MockEpisodeRewardScoreWrapper(gym.Wrapper):
+    def __init__(self, env, *args, **kwargs) -> None:
+        super().__init__(env)
+
+    def step(self, action):
+        obs, rew, done, info = self.env.step(action)
+        self.episode_score = 0
+        self.episode_reward += rew
+        if done:
+            info["bad_transition"] = True
+            info["episode_reward"] = self.episode_reward
+            info["episode_score"] = self.episode_score
         return obs, rew, done, info
 
     def reset(self, **kwargs):
@@ -321,6 +366,7 @@ class ObsUnsqueezeWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
         self.observation_space.shape = (1,) + self.observation_space.shape
+
     def step(self, action):
         obs, rew, done, info = self.env.step(action)
         return obs[np.newaxis], np.array([rew]), done, info
@@ -328,6 +374,7 @@ class ObsUnsqueezeWrapper(gym.Wrapper):
     def reset(self, **kwargs):
         obs = self.env.reset(**kwargs)
         return obs[np.newaxis]
+
 
 class GFNoopResetEnv(gym.Wrapper):
     def __init__(self, env, noop_max=30, seed=0):
@@ -339,13 +386,16 @@ class GFNoopResetEnv(gym.Wrapper):
         self.override_num_noops = None
         self.noop_action = 0
         self.np_random = np.random.RandomState(seed)
+
     def reset(self, **kwargs):
-        """ Do no-op action for a number of steps in [1, noop_max]."""
+        """Do no-op action for a number of steps in [1, noop_max]."""
         self.env.reset(**kwargs)
         if self.override_num_noops is not None:
             noops = self.override_num_noops
         else:
-            noops = self.np_random.randint(1, self.noop_max + 1) #pylint: disable=E1101
+            noops = self.np_random.randint(
+                1, self.noop_max + 1
+            )  # pylint: disable=E1101
         assert noops > 0
         obs = None
         for _ in range(noops):
